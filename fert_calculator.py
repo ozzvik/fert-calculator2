@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linprog
 
-st.title("Fertilizer Calculator with Preset Programs")
+st.title("Dual Program Fertilizer Calculator with Presets and Manual Input")
 
 # Fertilizer composition (%)
 fertilizers = pd.DataFrame({
@@ -18,12 +18,15 @@ fertilizers = pd.DataFrame({
 A = fertilizers.values.T / 100  # nutrients per kg fertilizer
 
 # Preset programs
-programs = {
+veg_programs = {
     "Veg Early": {"N":200, "K":50, "P":30, "Mg":50, "Ca":80, "S":20},
-    "Veg Late":  {"N":180, "K":70, "P":40, "Mg":50, "Ca":80, "S":20},
+    "Veg Late":  {"N":180, "K":70, "P":40, "Mg":50, "Ca":80, "S":20}
+}
+
+flower_programs = {
     "Flower Stage 1": {"N":150, "K":100, "P":50, "Mg":50, "Ca":80, "S":20},
     "Flower Stage 2": {"N":120, "K":130, "P":60, "Mg":50, "Ca":80, "S":20},
-    "Flower Stage 3": {"N":100, "K":160, "P":70, "Mg":50, "Ca":80, "S":20},
+    "Flower Stage 3": {"N":100, "K":160, "P":70, "Mg":50, "Ca":80, "S":20}
 }
 
 st.header("1️⃣ Stock and Irrigation Setup")
@@ -31,19 +34,37 @@ stock_volume = st.number_input("Stock tank volume (liters)", 500, step=1)
 irrigation_volume = st.number_input("Irrigation tank volume (liters)", 1000, step=1)
 tolerance = st.number_input("Tolerance (PPM)", 5, step=1)
 
-st.header("2️⃣ Choose Program")
-program_name = st.selectbox("Select a preset program", list(programs.keys()))
-target_ppm_dict = programs[program_name]
-target_ppm = np.array([target_ppm_dict["N"], target_ppm_dict["K"], target_ppm_dict["P"],
-                       target_ppm_dict["Mg"], target_ppm_dict["Ca"], target_ppm_dict["S"]])
+st.header("2️⃣ Program Selection (Optional)")
+veg_choice = st.selectbox("Select Veg Program (or choose 'Manual')", ["Manual"] + list(veg_programs.keys()))
+flower_choice = st.selectbox("Select Flower Program (or choose 'Manual')", ["Manual"] + list(flower_programs.keys()))
 
-# Solve for stock kg
-target_total_kg = target_ppm * stock_volume / 1000
-b_max = target_total_kg + tolerance*stock_volume/1000
-b_min = target_total_kg - tolerance*stock_volume/1000
+st.header("3️⃣ Manual PPM Input (overrides preset if filled)")
+def manual_input(label):
+    return st.number_input(label, value=0, step=1)
+
+N_veg = manual_input("Veg Nitrogen (N) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["N"]
+K_veg = manual_input("Veg Potassium (K) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["K"]
+P_veg = manual_input("Veg Phosphorus (P2O5) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["P"]
+Mg_veg = manual_input("Veg Magnesium (Mg) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["Mg"]
+Ca_veg = manual_input("Veg Calcium (Ca) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["Ca"]
+S_veg = manual_input("Veg Sulfur (S) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["S"]
+
+N_flower = manual_input("Flower Nitrogen (N) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["N"]
+K_flower = manual_input("Flower Potassium (K) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["K"]
+P_flower = manual_input("Flower Phosphorus (P2O5) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["P"]
+Mg_flower = manual_input("Flower Magnesium (Mg) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["Mg"]
+Ca_flower = manual_input("Flower Calcium (Ca) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["Ca"]
+S_flower = manual_input("Flower Sulfur (S) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["S"]
+
+target_veg = np.array([N_veg,K_veg,P_veg,Mg_veg,Ca_veg,S_veg])
+target_flower = np.array([N_flower,K_flower,P_flower,Mg_flower,Ca_flower,S_flower])
+
+# Solve for stock kg to satisfy both programs within tolerance
+target_min = np.minimum(target_veg, target_flower) * stock_volume/1000 - tolerance*stock_volume/1000
+target_max = np.maximum(target_veg, target_flower) * stock_volume/1000 + tolerance*stock_volume/1000
+
 A_ub = np.vstack([A, -A])
-b_ub = np.concatenate([b_max, -b_min])
-
+b_ub = np.concatenate([target_max, -target_min])
 c = np.ones(len(fertilizers))
 bounds = [(0, None) for _ in range(len(fertilizers))]
 
@@ -57,17 +78,26 @@ if res.success:
         st.table(stock_kg)
         
         st.header("2️⃣ PPM contribution per liter of irrigation tank")
-        ppm_per_liter_irrigation = (res.x[:, None] * A * stock_volume / irrigation_volume * 1000)
+        ppm_per_liter_irrigation = np.outer(res.x, np.ones(A.shape[0])) * A * stock_volume / irrigation_volume * 1000
         ppm_irrigation_df = pd.DataFrame(ppm_per_liter_irrigation, index=fertilizers.index,
-                                        columns=["N","K","P","Mg","Ca","S"])
+                                         columns=["N","K","P","Mg","Ca","S"])
         ppm_irrigation_df = ppm_irrigation_df.astype(int)
         st.table(ppm_irrigation_df)
         
         st.header("3️⃣ Stock liters to add per irrigation tank")
-        total_ppm_per_liter = ppm_per_liter_irrigation.sum(axis=0)
-        stock_liters_needed = np.linalg.lstsq(ppm_per_liter_irrigation.values.T, target_ppm, rcond=None)[0]
-        stock_liters_series = pd.Series(stock_liters_needed, index=fertilizers.index).apply(lambda x: int(round(x)))
-        st.table(stock_liters_series)
+        def calc_stock_liters(target_ppm):
+            total_ppm_matrix = ppm_per_liter_irrigation.T
+            stock_liters, residuals, rank, s = np.linalg.lstsq(total_ppm_matrix, target_ppm, rcond=None)
+            return np.clip(stock_liters, 0, None)
+        
+        liters_veg = pd.Series(calc_stock_liters(target_veg), index=fertilizers.index).apply(lambda x: int(round(x)))
+        liters_flower = pd.Series(calc_stock_liters(target_flower), index=fertilizers.index).apply(lambda x: int(round(x)))
+        
+        st.subheader("Veg Program - liters of stock per irrigation tank:")
+        st.table(liters_veg)
+        
+        st.subheader("Flower Program - liters of stock per irrigation tank:")
+        st.table(liters_flower)
         
 else:
     st.error("No feasible solution found within the given tolerance and fertilizer composition.")
