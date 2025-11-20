@@ -3,28 +3,35 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linprog
 
-st.title("Fertilizer Stock Calculator with Tolerance and Reuse")
+st.title("Dual Program Fertilizer Calculator")
 
 st.write("""
-Step 1: Enter desired PPM for your stock solution and tolerance.  
-Step 2: Get kg of each fertilizer to dissolve.  
-Step 3: The app calculates PPM per liter of stock for later use in other fertilizer plans.
+Enter desired PPM for two programs (A = Veg, B = Flower), stock tank volume, and irrigation tank volume.  
+The app calculates kg of fertilizers for the stock solution and liters/mL to add per irrigation tank for both programs.
 """)
 
 # Step 1: User inputs
-st.header("Stock Solution Setup")
-N_ppm = st.number_input("Nitrogen (N) PPM", 0.0)
-K_ppm = st.number_input("Potassium (K) PPM", 0.0)
-P_ppm = st.number_input("Phosphorus (P2O5) PPM", 0.0)
-Mg_ppm = st.number_input("Magnesium (Mg) PPM", 0.0)
-Ca_ppm = st.number_input("Calcium (Ca) PPM", 0.0)
-S_ppm = st.number_input("Sulfur (S) PPM", 0.0)
-tolerance = st.number_input("Tolerance (PPM)", 20.0)
+st.header("1️⃣ Stock and Irrigation Setup")
 stock_volume = st.number_input("Stock tank volume (liters)", 500.0)
+irrigation_volume = st.number_input("Irrigation tank volume (liters)", 1000.0)
 
-target_ppm = np.array([N_ppm, K_ppm, P_ppm, Mg_ppm, Ca_ppm, S_ppm])
-target_total_kg = target_ppm * stock_volume / 1000
-tolerance_kg = tolerance * stock_volume / 1000
+st.header("2️⃣ Program A PPM (Veg)")
+N_A = st.number_input("Program A Nitrogen (N) PPM", 0.0, key="NA")
+K_A = st.number_input("Program A Potassium (K) PPM", 0.0, key="KA")
+P_A = st.number_input("Program A Phosphorus (P2O5) PPM", 0.0, key="PA")
+Mg_A = st.number_input("Program A Magnesium (Mg) PPM", 0.0, key="MgA")
+Ca_A = st.number_input("Program A Calcium (Ca) PPM", 0.0, key="CaA")
+S_A = st.number_input("Program A Sulfur (S) PPM", 0.0, key="SA")
+
+st.header("3️⃣ Program B PPM (Flower)")
+N_B = st.number_input("Program B Nitrogen (N) PPM", 0.0, key="NB")
+K_B = st.number_input("Program B Potassium (K) PPM", 0.0, key="KB")
+P_B = st.number_input("Program B Phosphorus (P2O5) PPM", 0.0, key="PB")
+Mg_B = st.number_input("Program B Magnesium (Mg) PPM", 0.0, key="MgB")
+Ca_B = st.number_input("Program B Calcium (Ca) PPM", 0.0, key="CaB")
+S_B = st.number_input("Program B Sulfur (S) PPM", 0.0, key="SB")
+
+tolerance = st.number_input("Tolerance (PPM)", 20.0)
 
 # Fertilizer composition (%)
 fertilizers = pd.DataFrame({
@@ -38,11 +45,20 @@ fertilizers = pd.DataFrame({
 
 A = fertilizers.values.T / 100
 
-b_max = target_total_kg + tolerance_kg
-b_min = target_total_kg - tolerance_kg
+# Target total kg for stock (PPM * volume / 1000)
+target_ppm_A = np.array([N_A,K_A,P_A,Mg_A,Ca_A,S_A])
+target_ppm_B = np.array([N_B,K_B,P_B,Mg_B,Ca_B,S_B])
+
+target_total_kg_A = target_ppm_A * stock_volume / 1000
+target_total_kg_B = target_ppm_B * stock_volume / 1000
+
+# Stack the targets to satisfy both programs
+b_max = np.maximum(target_total_kg_A, target_total_kg_B) + tolerance*stock_volume/1000
+b_min = np.minimum(target_total_kg_A, target_total_kg_B) - tolerance*stock_volume/1000
 A_ub = np.vstack([A, -A])
 b_ub = np.concatenate([b_max, -b_min])
 
+# Objective: minimize total fertilizer kg
 c = np.ones(len(fertilizers))
 bounds = [(0, None) for _ in range(len(fertilizers))]
 
@@ -53,30 +69,33 @@ if res.success:
     ppm_per_liter = (res.x[:, None] * fertilizers.values / stock_volume * 1000).round(2)
     ppm_per_liter_df = pd.DataFrame(ppm_per_liter, index=fertilizers.index, columns=["N","K","P","Mg","Ca","S"])
     
-    if st.button("Calculate Stock Solution"):
+    if st.button("Calculate Stock and Irrigation"):
         st.subheader("1️⃣ Fertilizer kg to dissolve in stock tank:")
         st.table(stock_kg)
         
         st.subheader("2️⃣ PPM per liter of stock solution:")
         st.table(ppm_per_liter_df)
         
-        st.header("Step 2: Use Stock for Other Fertilizer Plans")
-        st.write("Enter desired PPM for a different plan to calculate liters of stock to use per tank:")
+        st.header("3️⃣ Irrigation tank doses (liters or mL to add)")
+        # Compute liters of stock needed for irrigation tank for each program
+        desired_ppm_A = target_ppm_A
+        desired_ppm_B = target_ppm_B
         
-        N2 = st.number_input("New Plan N PPM", 0.0, key="new_N")
-        K2 = st.number_input("New Plan K PPM", 0.0, key="new_K")
-        P2 = st.number_input("New Plan P2O5 PPM", 0.0, key="new_P")
-        Mg2 = st.number_input("New Plan Mg PPM", 0.0, key="new_Mg")
-        Ca2 = st.number_input("New Plan Ca PPM", 0.0, key="new_Ca")
-        S2 = st.number_input("New Plan S PPM", 0.0, key="new_S")
+        liters_needed_A = np.where(ppm_per_liter_df.values.sum(axis=0)>0,
+                                   desired_ppm_A / ppm_per_liter_df.sum(axis=0).values,
+                                   np.nan)
+        liters_needed_B = np.where(ppm_per_liter_df.values.sum(axis=0)>0,
+                                   desired_ppm_B / ppm_per_liter_df.sum(axis=0).values,
+                                   np.nan)
         
-        desired_ppm = np.array([N2,K2,P2,Mg2,Ca2,S2])
-        liters_needed = np.where(ppm_per_liter_df.values.sum(axis=0)>0,
-                                 desired_ppm / ppm_per_liter_df.sum(axis=0).values,
-                                 np.nan)
-        liters_needed_series = pd.Series(liters_needed, index=["N","K","P","Mg","Ca","S"]).round(2)
-        st.subheader("3️⃣ Liters of stock to add per tank for new plan:")
-        st.table(liters_needed_series)
+        liters_needed_A_series = pd.Series(liters_needed_A, index=["N","K","P","Mg","Ca","S"]).round(2)
+        liters_needed_B_series = pd.Series(liters_needed_B, index=["N","K","P","Mg","Ca","S"]).round(2)
+        
+        st.subheader("Program A (Veg) - liters/mL per irrigation tank:")
+        st.table(liters_needed_A_series)
+        
+        st.subheader("Program B (Flower) - liters/mL per irrigation tank:")
+        st.table(liters_needed_B_series)
         
 else:
     st.error("No feasible solution found within the given tolerance and fertilizer composition.")
