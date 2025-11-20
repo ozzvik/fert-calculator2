@@ -13,14 +13,14 @@ Step 3: The app calculates PPM per liter of stock for later use in other fertili
 
 # Step 1: User inputs
 st.header("Stock Solution Setup")
-N_ppm = st.number_input("Nitrogen (N) PPM", 0.0)
-K_ppm = st.number_input("Potassium (K) PPM", 0.0)
-P_ppm = st.number_input("Phosphorus (P2O5) PPM", 0.0)
-Mg_ppm = st.number_input("Magnesium (Mg) PPM", 0.0)
-Ca_ppm = st.number_input("Calcium (Ca) PPM", 0.0)
-S_ppm = st.number_input("Sulfur (S) PPM", 0.0)
-tolerance = st.number_input("Tolerance (PPM)", 20.0, min_value=0.0)
-stock_volume = st.number_input("Stock tank volume (liters)", 500.0)
+N_ppm = st.number_input("Nitrogen (N) PPM", value=0.0, min_value=0.0, step=1.0, type=float)
+K_ppm = st.number_input("Potassium (K) PPM", value=0.0, min_value=0.0, step=1.0, type=float)
+P_ppm = st.number_input("Phosphorus (P2O5) PPM", value=0.0, min_value=0.0, step=1.0, type=float)
+Mg_ppm = st.number_input("Magnesium (Mg) PPM", value=0.0, min_value=0.0, step=1.0, type=float)
+Ca_ppm = st.number_input("Calcium (Ca) PPM", value=0.0, min_value=0.0, step=1.0, type=float)
+S_ppm = st.number_input("Sulfur (S) PPM", value=0.0, min_value=0.0, step=1.0, type=float)
+tolerance = st.number_input("Tolerance (PPM)", value=20.0, min_value=0.0, step=1.0, type=float)
+stock_volume = st.number_input("Stock tank volume (liters)", value=500.0, min_value=1.0, step=1.0, type=float)
 
 target_ppm = np.array([N_ppm, K_ppm, P_ppm, Mg_ppm, Ca_ppm, S_ppm])
 target_total_kg = target_ppm * stock_volume / 1000
@@ -66,12 +66,12 @@ if res.success:
         st.header("Step 2: Use Stock for Other Fertilizer Plans")
         st.write("Enter desired PPM for a different plan to calculate liters of stock to use per tank:")
         
-        N2 = st.number_input("New Plan N PPM", 0.0, key="new_N")
-        K2 = st.number_input("New Plan K PPM", 0.0, key="new_K")
-        P2 = st.number_input("New Plan P2O5 PPM", 0.0, key="new_P")
-        Mg2 = st.number_input("New Plan Mg PPM", 0.0, key="new_Mg")
-        Ca2 = st.number_input("New Plan Ca PPM", 0.0, key="new_Ca")
-        S2 = st.number_input("New Plan S PPM", 0.0, key="new_S")
+        N2 = st.number_input("New Plan N PPM", 0.0, key="new_N", step=1.0, type=float)
+        K2 = st.number_input("New Plan K PPM", 0.0, key="new_K", step=1.0, type=float)
+        P2 = st.number_input("New Plan P2O5 PPM", 0.0, key="new_P", step=1.0, type=float)
+        Mg2 = st.number_input("New Plan Mg PPM", 0.0, key="new_Mg", step=1.0, type=float)
+        Ca2 = st.number_input("New Plan Ca PPM", 0.0, key="new_Ca", step=1.0, type=float)
+        S2 = st.number_input("New Plan S PPM", 0.0, key="new_S", step=1.0, type=float)
         
         desired_ppm = np.array([N2,K2,P2,Mg2,Ca2,S2])
         
