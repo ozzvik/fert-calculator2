@@ -38,14 +38,11 @@ fertilizers = pd.DataFrame({
 
 A = fertilizers.values.T / 100
 
-# Inequalities for tolerance
 b_max = target_total_kg + tolerance_kg
 b_min = target_total_kg - tolerance_kg
-
 A_ub = np.vstack([A, -A])
 b_ub = np.concatenate([b_max, -b_min])
 
-# Objective: minimize total fertilizer kg
 c = np.ones(len(fertilizers))
 bounds = [(0, None) for _ in range(len(fertilizers))]
 
@@ -53,7 +50,7 @@ res = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
 
 if res.success:
     stock_kg = pd.Series(res.x, index=fertilizers.index).apply(lambda x: round(x,2))
-    ppm_per_liter = (res.x * 1000 / stock_volume * (fertilizers.values.T)).round(2)
+    ppm_per_liter = (res.x[:, None] * fertilizers.values / stock_volume * 1000).round(2)
     ppm_per_liter_df = pd.DataFrame(ppm_per_liter, index=fertilizers.index, columns=["N","K","P","Mg","Ca","S"])
     
     if st.button("Calculate Stock Solution"):
@@ -74,8 +71,6 @@ if res.success:
         S2 = st.number_input("New Plan S PPM", 0.0, key="new_S")
         
         desired_ppm = np.array([N2,K2,P2,Mg2,Ca2,S2])
-        
-        # Compute liters of stock needed per tank
         liters_needed = np.where(ppm_per_liter_df.values.sum(axis=0)>0,
                                  desired_ppm / ppm_per_liter_df.sum(axis=0).values,
                                  np.nan)
