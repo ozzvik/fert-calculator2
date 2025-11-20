@@ -15,7 +15,7 @@ fertilizers = pd.DataFrame({
     "S": [0, 18, 13, 0, 0, 0, 0]
 }, index=["K GG","SOP","MgSO4","Mg(NO3)2","Ca(NO3)2","MAP","MKP"])
 
-A = fertilizers.values.T / 100  # nutrients per kg fertilizer
+A = fertilizers.values.T / 100  # 6x7 matrix (N,K,P,Mg,Ca,S) per kg fertilizer
 
 # Preset programs
 veg_programs = {
@@ -35,29 +35,29 @@ irrigation_volume = st.number_input("Irrigation tank volume (liters)", 1000, ste
 tolerance = st.number_input("Tolerance (PPM)", 5, step=1)
 
 st.header("2️⃣ Program Selection (Optional)")
-veg_choice = st.selectbox("Select Veg Program (or choose 'Manual')", ["Manual"] + list(veg_programs.keys()))
-flower_choice = st.selectbox("Select Flower Program (or choose 'Manual')", ["Manual"] + list(flower_programs.keys()))
+veg_choice = st.selectbox("Select Veg Program (or 'Manual')", ["Manual"] + list(veg_programs.keys()))
+flower_choice = st.selectbox("Select Flower Program (or 'Manual')", ["Manual"] + list(flower_programs.keys()))
 
 st.header("3️⃣ Manual PPM Input (overrides preset if filled)")
-def manual_input(label):
-    return st.number_input(label, value=0, step=1)
+def manual_input(label, default=0):
+    return st.number_input(label, value=default, step=1)
 
-N_veg = manual_input("Veg Nitrogen (N) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["N"]
-K_veg = manual_input("Veg Potassium (K) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["K"]
-P_veg = manual_input("Veg Phosphorus (P2O5) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["P"]
-Mg_veg = manual_input("Veg Magnesium (Mg) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["Mg"]
-Ca_veg = manual_input("Veg Calcium (Ca) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["Ca"]
-S_veg = manual_input("Veg Sulfur (S) PPM") if veg_choice=="Manual" else veg_programs[veg_choice]["S"]
+def get_program_ppm(choice, programs):
+    if choice=="Manual":
+        return np.array([
+            manual_input("Nitrogen (N) PPM"),
+            manual_input("Potassium (K) PPM"),
+            manual_input("Phosphorus (P2O5) PPM"),
+            manual_input("Magnesium (Mg) PPM"),
+            manual_input("Calcium (Ca) PPM"),
+            manual_input("Sulfur (S) PPM")
+        ])
+    else:
+        prog = programs[choice]
+        return np.array([prog["N"], prog["K"], prog["P"], prog["Mg"], prog["Ca"], prog["S"]])
 
-N_flower = manual_input("Flower Nitrogen (N) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["N"]
-K_flower = manual_input("Flower Potassium (K) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["K"]
-P_flower = manual_input("Flower Phosphorus (P2O5) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["P"]
-Mg_flower = manual_input("Flower Magnesium (Mg) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["Mg"]
-Ca_flower = manual_input("Flower Calcium (Ca) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["Ca"]
-S_flower = manual_input("Flower Sulfur (S) PPM") if flower_choice=="Manual" else flower_programs[flower_choice]["S"]
-
-target_veg = np.array([N_veg,K_veg,P_veg,Mg_veg,Ca_veg,S_veg])
-target_flower = np.array([N_flower,K_flower,P_flower,Mg_flower,Ca_flower,S_flower])
+target_veg = get_program_ppm(veg_choice, veg_programs)
+target_flower = get_program_ppm(flower_choice, flower_programs)
 
 # Solve for stock kg to satisfy both programs within tolerance
 target_min = np.minimum(target_veg, target_flower) * stock_volume/1000 - tolerance*stock_volume/1000
@@ -78,10 +78,10 @@ if res.success:
         st.table(stock_kg)
         
         st.header("2️⃣ PPM contribution per liter of irrigation tank")
-        ppm_per_liter_irrigation = np.outer(res.x, np.ones(A.shape[0])) * A * stock_volume / irrigation_volume * 1000
+        # Correct multiplication to match dimensions: each fertilizer (kg) times A / irrigation_volume
+        ppm_per_liter_irrigation = (res.x.reshape(-1,1) * A) * stock_volume / irrigation_volume * 1000
         ppm_irrigation_df = pd.DataFrame(ppm_per_liter_irrigation, index=fertilizers.index,
-                                         columns=["N","K","P","Mg","Ca","S"])
-        ppm_irrigation_df = ppm_irrigation_df.astype(int)
+                                         columns=["N","K","P","Mg","Ca","S"]).astype(int)
         st.table(ppm_irrigation_df)
         
         st.header("3️⃣ Stock liters to add per irrigation tank")
