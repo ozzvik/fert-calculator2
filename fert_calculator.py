@@ -3,37 +3,9 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linprog
 
-st.title("Dual Program Fertilizer Calculator")
+st.title("Fertilizer Calculator with Preset Programs")
 
-st.write("""
-Enter desired PPM for two programs (A = Veg, B = Flower), stock tank volume, and irrigation tank volume.  
-The app calculates kg of fertilizers for the stock solution and liters/mL to add per irrigation tank for both programs, solving all nutrients simultaneously.
-""")
-
-# 1️⃣ Inputs
-st.header("1️⃣ Stock and Irrigation Setup")
-stock_volume = st.number_input("Stock tank volume (liters)", 500, step=1)
-irrigation_volume = st.number_input("Irrigation tank volume (liters)", 1000, step=1)
-
-st.header("2️⃣ Program A PPM (Veg)")
-N_A = st.number_input("Program A Nitrogen (N) PPM", 0, step=1, key="NA")
-K_A = st.number_input("Program A Potassium (K) PPM", 0, step=1, key="KA")
-P_A = st.number_input("Program A Phosphorus (P2O5) PPM", 0, step=1, key="PA")
-Mg_A = st.number_input("Program A Magnesium (Mg) PPM", 0, step=1, key="MgA")
-Ca_A = st.number_input("Program A Calcium (Ca) PPM", 0, step=1, key="CaA")
-S_A = st.number_input("Program A Sulfur (S) PPM", 0, step=1, key="SA")
-
-st.header("3️⃣ Program B PPM (Flower)")
-N_B = st.number_input("Program B Nitrogen (N) PPM", 0, step=1, key="NB")
-K_B = st.number_input("Program B Potassium (K) PPM", 0, step=1, key="KB")
-P_B = st.number_input("Program B Phosphorus (P2O5) PPM", 0, step=1, key="PB")
-Mg_B = st.number_input("Program B Magnesium (Mg) PPM", 0, step=1, key="MgB")
-Ca_B = st.number_input("Program B Calcium (Ca) PPM", 0, step=1, key="CaB")
-S_B = st.number_input("Program B Sulfur (S) PPM", 0, step=1, key="SB")
-
-tolerance = st.number_input("Tolerance (PPM)", 5, step=1)
-
-# 2️⃣ Fertilizer composition (%)
+# Fertilizer composition (%)
 fertilizers = pd.DataFrame({
     "N": [13.7, 0, 0, 13.7, 15, 0, 0],
     "K": [38.7, 50, 0, 0, 0, 0, 34],
@@ -45,13 +17,30 @@ fertilizers = pd.DataFrame({
 
 A = fertilizers.values.T / 100  # nutrients per kg fertilizer
 
-# 3️⃣ Target total nutrients per stock solution
-target_A_kg = np.array([N_A,K_A,P_A,Mg_A,Ca_A,S_A]) * stock_volume / 1000
-target_B_kg = np.array([N_B,K_B,P_B,Mg_B,Ca_B,S_B]) * stock_volume / 1000
+# Preset programs
+programs = {
+    "Veg Early": {"N":200, "K":50, "P":30, "Mg":50, "Ca":80, "S":20},
+    "Veg Late":  {"N":180, "K":70, "P":40, "Mg":50, "Ca":80, "S":20},
+    "Flower Stage 1": {"N":150, "K":100, "P":50, "Mg":50, "Ca":80, "S":20},
+    "Flower Stage 2": {"N":120, "K":130, "P":60, "Mg":50, "Ca":80, "S":20},
+    "Flower Stage 3": {"N":100, "K":160, "P":70, "Mg":50, "Ca":80, "S":20},
+}
 
-# 4️⃣ Solve for stock kg to satisfy both programs
-b_max = np.maximum(target_A_kg, target_B_kg) + tolerance*stock_volume/1000
-b_min = np.minimum(target_A_kg, target_B_kg) - tolerance*stock_volume/1000
+st.header("1️⃣ Stock and Irrigation Setup")
+stock_volume = st.number_input("Stock tank volume (liters)", 500, step=1)
+irrigation_volume = st.number_input("Irrigation tank volume (liters)", 1000, step=1)
+tolerance = st.number_input("Tolerance (PPM)", 5, step=1)
+
+st.header("2️⃣ Choose Program")
+program_name = st.selectbox("Select a preset program", list(programs.keys()))
+target_ppm_dict = programs[program_name]
+target_ppm = np.array([target_ppm_dict["N"], target_ppm_dict["K"], target_ppm_dict["P"],
+                       target_ppm_dict["Mg"], target_ppm_dict["Ca"], target_ppm_dict["S"]])
+
+# Solve for stock kg
+target_total_kg = target_ppm * stock_volume / 1000
+b_max = target_total_kg + tolerance*stock_volume/1000
+b_min = target_total_kg - tolerance*stock_volume/1000
 A_ub = np.vstack([A, -A])
 b_ub = np.concatenate([b_max, -b_min])
 
@@ -69,30 +58,16 @@ if res.success:
         
         st.header("2️⃣ PPM contribution per liter of irrigation tank")
         ppm_per_liter_irrigation = (res.x[:, None] * A * stock_volume / irrigation_volume * 1000)
-        ppm_irrigation_df = pd.DataFrame(ppm_per_liter_irrigation, index=fertilizers.index, columns=["N","K","P","Mg","Ca","S"])
+        ppm_irrigation_df = pd.DataFrame(ppm_per_liter_irrigation, index=fertilizers.index,
+                                        columns=["N","K","P","Mg","Ca","S"])
         ppm_irrigation_df = ppm_irrigation_df.astype(int)
         st.table(ppm_irrigation_df)
         
-        st.header("3️⃣ Stock liters to add per irrigation tank for each program")
-        # Solve how many liters of stock to add to reach desired PPM in irrigation tank
-        def calc_stock_liters(target_ppm):
-            # target_ppm: array shape (6,)
-            total_ppm_matrix = ppm_per_liter_irrigation.values.T  # shape 6x7
-            # Solve using least squares
-            stock_liters, residuals, rank, s = np.linalg.lstsq(total_ppm_matrix, target_ppm, rcond=None)
-            return np.clip(stock_liters, 0, None)
-        
-        liters_needed_A = calc_stock_liters(np.array([N_A,K_A,P_A,Mg_A,Ca_A,S_A]))
-        liters_needed_B = calc_stock_liters(np.array([N_B,K_B,P_B,Mg_B,Ca_B,S_B]))
-        
-        liters_needed_A_series = pd.Series(liters_needed_A, index=fertilizers.index).apply(lambda x: int(round(x)))
-        liters_needed_B_series = pd.Series(liters_needed_B, index=fertilizers.index).apply(lambda x: int(round(x)))
-        
-        st.subheader("Program A (Veg) - liters of stock to add per irrigation tank:")
-        st.table(liters_needed_A_series)
-        
-        st.subheader("Program B (Flower) - liters of stock to add per irrigation tank:")
-        st.table(liters_needed_B_series)
+        st.header("3️⃣ Stock liters to add per irrigation tank")
+        total_ppm_per_liter = ppm_per_liter_irrigation.sum(axis=0)
+        stock_liters_needed = np.linalg.lstsq(ppm_per_liter_irrigation.values.T, target_ppm, rcond=None)[0]
+        stock_liters_series = pd.Series(stock_liters_needed, index=fertilizers.index).apply(lambda x: int(round(x)))
+        st.table(stock_liters_series)
         
 else:
     st.error("No feasible solution found within the given tolerance and fertilizer composition.")
